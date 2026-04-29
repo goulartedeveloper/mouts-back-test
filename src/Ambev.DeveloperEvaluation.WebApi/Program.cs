@@ -3,8 +3,10 @@ using Ambev.DeveloperEvaluation.Common.HealthChecks;
 using Ambev.DeveloperEvaluation.Common.Logging;
 using Ambev.DeveloperEvaluation.Common.Security;
 using Ambev.DeveloperEvaluation.Common.Validation;
+using Ambev.DeveloperEvaluation.Domain.Events;
 using Ambev.DeveloperEvaluation.IoC;
 using Ambev.DeveloperEvaluation.ORM;
+using Ambev.DeveloperEvaluation.WebApi.Events;
 using Ambev.DeveloperEvaluation.WebApi.Middleware;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -52,7 +54,24 @@ public class Program
 
             builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
+            builder.Services.AddScoped<IDomainEventPublisher, LoggingDomainEventPublisher>();
+
             var app = builder.Build();
+
+            // Apply pending migrations on startup. Keeps `docker compose up` self-sufficient
+            // for the prototype: no manual `dotnet ef database update` step required.
+            // Skipped under non-relational providers (e.g. InMemory used in functional tests).
+            using (var scope = app.Services.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<DefaultContext>();
+                if (dbContext.Database.IsRelational())
+                    dbContext.Database.Migrate();
+            }
+
+            // Order matters: GlobalException is the outermost catch, ValidationException sits closer
+            // to the controller so FluentValidation.ValidationException is handled with 400 + the
+            // documented error envelope before the generic catch-all turns it into a 500.
+            app.UseMiddleware<GlobalExceptionMiddleware>();
             app.UseMiddleware<ValidationExceptionMiddleware>();
 
             if (app.Environment.IsDevelopment())
@@ -60,8 +79,11 @@ public class Program
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
-
-            app.UseHttpsRedirection();
+            else
+            {
+                // No dev cert is mounted into the container — skip the redirect outside Development too.
+                app.UseHttpsRedirection();
+            }
 
             app.UseAuthentication();
             app.UseAuthorization();
