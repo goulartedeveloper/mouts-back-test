@@ -1,12 +1,20 @@
-﻿using Ambev.DeveloperEvaluation.Common.Validation;
+using System.Text.Json;
 using Ambev.DeveloperEvaluation.WebApi.Common;
 using FluentValidation;
-using System.Text.Json;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Middleware
 {
+    /// <summary>
+    /// Maps <see cref="ValidationException"/>s into the standard error envelope
+    /// (<c>{ type, error, detail }</c>) defined in <c>/.doc/general-api.md</c>.
+    /// </summary>
     public class ValidationExceptionMiddleware
     {
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
         private readonly RequestDelegate _next;
 
         public ValidationExceptionMiddleware(RequestDelegate next)
@@ -31,20 +39,15 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
             context.Response.ContentType = "application/json";
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
 
-            var response = new ApiResponse
+            var detail = string.Join("; ", exception.Errors.Select(e => e.ErrorMessage));
+            var response = new ApiErrorResponse
             {
-                Success = false,
-                Message = "Validation Failed",
-                Errors = exception.Errors
-                    .Select(error => (ValidationErrorDetail)error)
+                Type = "ValidationError",
+                Error = "Invalid input data",
+                Detail = string.IsNullOrEmpty(detail) ? exception.Message : detail
             };
 
-            var jsonOptions = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
-
-            return context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
+            return context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
         }
     }
 }
