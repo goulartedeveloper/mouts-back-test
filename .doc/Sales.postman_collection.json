@@ -1,0 +1,319 @@
+{
+  "info": {
+    "_postman_id": "a14d1f00-5a01-4e22-9f1e-ambev-sales",
+    "name": "Ambev DeveloperEvaluation - Sales API",
+    "description": "Collection for the Sales API (DDD + CQRS) built on the developer evaluation template.\n\n**Pré-requisitos**: subir o stack com `docker compose up -d --build`. A API expõe `http://localhost:8080`.\n\n**Autenticação**: `SalesController` exige JWT. A collection roda na ordem:\n1. `Setup - Register tester user` (idempotente, ignora 409 se já existe)\n2. `Setup - Login (gets JWT)` — salva `bearerToken` automaticamente nas variáveis\n3. As demais requests usam `Bearer {{bearerToken}}` automaticamente via `auth` no nível da collection\n\n**Variáveis úteis** (já declaradas):\n- `baseUrl` (default `http://localhost:8080`)\n- `bearerToken` (preenchido automaticamente pelo Login)\n- `saleId` (preenchido pelo Create Sale)\n- `itemId` (preenchido pelo Get Sale by Id)\n- `customerId`, `branchId`, `productId`, `productId2` (Guids fixos para repetibilidade)\n- `testerEmail`, `testerPassword` (credenciais do user usado pelo Login)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{bearerToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "bearerToken", "value": "" },
+    { "key": "saleId", "value": "" },
+    { "key": "itemId", "value": "" },
+    { "key": "customerId", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "branchId", "value": "22222222-2222-2222-2222-222222222222" },
+    { "key": "productId", "value": "33333333-3333-3333-3333-333333333333" },
+    { "key": "productId2", "value": "44444444-4444-4444-4444-444444444444" },
+    { "key": "testerEmail", "value": "tester@example.com" },
+    { "key": "testerPassword", "value": "Test@1234" }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "noauth" },
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+        "description": "Smoke test que a API está no ar. Não requer autenticação."
+      }
+    },
+    {
+      "name": "Setup - Register tester user",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// 201 = criado agora; 409 = já existia, OK seguir para o login.",
+              "pm.test('user registered or already exists', () => {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "noauth" },
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"tester\",\n  \"password\": \"{{testerPassword}}\",\n  \"email\": \"{{testerEmail}}\",\n  \"phone\": \"+5511999999999\",\n  \"status\": 1,\n  \"role\": 3\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] },
+        "description": "Cria o usuário usado para autenticar no Login. Idempotente: se o user já existe, a API retorna 409 e o teste passa mesmo assim.\n\n`status`/`role` são enums numéricos: `UserStatus.Active = 1`, `UserRole.Admin = 3`."
+      }
+    },
+    {
+      "name": "Setup - Login (gets JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.code === 200);",
+              "const json = pm.response.json();",
+              "// AuthController returns through BaseController.Ok<T> which double-wraps the payload.",
+              "let payload = json && json.data ? json.data : json;",
+              "if (payload && payload.data && payload.data.token) payload = payload.data;",
+              "if (payload && payload.token) {",
+              "  pm.collectionVariables.set('bearerToken', payload.token);",
+              "  console.log('bearerToken set');",
+              "}",
+              "pm.test('token captured', () => !!pm.collectionVariables.get('bearerToken'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "noauth" },
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{testerEmail}}\",\n  \"password\": \"{{testerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth", "host": ["{{baseUrl}}"], "path": ["api", "auth"] },
+        "description": "Faz login com o user criado acima. Salva `bearerToken` na collection — todas as requests subsequentes usam `Bearer {{bearerToken}}` automaticamente."
+      }
+    },
+    {
+      "name": "Create Sale (POST)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json && json.data && json.data.id) {",
+              "  pm.collectionVariables.set('saleId', json.data.id);",
+              "  console.log('saleId set to', json.data.id);",
+              "}",
+              "pm.test('status is 201', () => pm.response.code === 201);",
+              "pm.test('totalAmount is calculated', () => {",
+              "  pm.expect(json.data.totalAmount).to.be.greaterThan(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"saleNumber\": \"S-{{$timestamp}}\",\n  \"saleDate\": \"2026-04-29T10:00:00Z\",\n  \"customerId\": \"{{customerId}}\",\n  \"customerName\": \"Alice Postman\",\n  \"branchId\": \"{{branchId}}\",\n  \"branchName\": \"Branch Postman\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"productName\": \"Beer Skol\", \"quantity\": 5, \"unitPrice\": 10.50 },\n    { \"productId\": \"{{productId2}}\", \"productName\": \"Beer Brahma\", \"quantity\": 12, \"unitPrice\": 8.00 }\n  ]\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/sales", "host": ["{{baseUrl}}"], "path": ["api", "sales"] },
+        "description": "Cria uma venda com 2 itens.\n\n**Aplica regras de desconto:**\n- Item 1: qty=5 → 10% off → 5 × 10.50 × 0.90 = 47.25\n- Item 2: qty=12 → 20% off → 12 × 8.00 × 0.80 = 76.80\n- Total: 124.05\n\nAtualiza automaticamente a variável `saleId` da collection."
+      }
+    },
+    {
+      "name": "Get Sale by Id",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json && json.data && json.data.items && json.data.items.length > 0) {",
+              "  pm.collectionVariables.set('itemId', json.data.items[0].id);",
+              "}",
+              "pm.test('status is 200', () => pm.response.code === 200);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/sales/{{saleId}}", "host": ["{{baseUrl}}"], "path": ["api", "sales", "{{saleId}}"] },
+        "description": "Busca a venda criada pelo POST. Atualiza a variável `itemId` com o primeiro item."
+      }
+    },
+    {
+      "name": "List Sales (paginated)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales?_page=1&_size=10&_order=saleDate desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales"],
+          "query": [
+            { "key": "_page", "value": "1" },
+            { "key": "_size", "value": "10" },
+            { "key": "_order", "value": "saleDate desc" }
+          ]
+        },
+        "description": "Lista paginada com ordenação.\n\nResposta: `{ data: [...], totalItems, currentPage, totalPages, success }`"
+      }
+    },
+    {
+      "name": "List Sales (filter customerName wildcard)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales?customerName=Al*",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales"],
+          "query": [{ "key": "customerName", "value": "Al*" }]
+        },
+        "description": "Filtro de string com wildcard `*`. Suporta `Al*` (starts-with), `*ice` (ends-with) e `*Postman*` (contains).\n\nMesma convenção em `saleNumber` e `branchName`."
+      }
+    },
+    {
+      "name": "List Sales (filter total amount range)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales?_minTotalAmount=50&_maxTotalAmount=200",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales"],
+          "query": [
+            { "key": "_minTotalAmount", "value": "50" },
+            { "key": "_maxTotalAmount", "value": "200" }
+          ]
+        },
+        "description": "Filtros numéricos por range. Mesmo padrão `_minSaleDate`/`_maxSaleDate` para datas."
+      }
+    },
+    {
+      "name": "List Sales (filter by customer + branch + only cancelled)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales?customerId={{customerId}}&branchId={{branchId}}&isCancelled=true",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales"],
+          "query": [
+            { "key": "customerId", "value": "{{customerId}}" },
+            { "key": "branchId", "value": "{{branchId}}" },
+            { "key": "isCancelled", "value": "true" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Sale (PUT)",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"saleDate\": \"2026-04-30T12:00:00Z\",\n  \"customerId\": \"{{customerId}}\",\n  \"customerName\": \"Alice Updated\",\n  \"branchId\": \"{{branchId}}\",\n  \"branchName\": \"Branch Updated\",\n  \"items\": [\n    { \"productId\": \"55555555-5555-5555-5555-555555555555\", \"productName\": \"Wine Reserva\", \"quantity\": 3, \"unitPrice\": 25.00 }\n  ]\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/sales/{{saleId}}", "host": ["{{baseUrl}}"], "path": ["api", "sales", "{{saleId}}"] },
+        "description": "Substitui o estado editável da venda (incluindo a coleção de itens).\n\nDispara `SaleModifiedEvent` (logado)."
+      }
+    },
+    {
+      "name": "Cancel Sale Item",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales/{{saleId}}/items/{{itemId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales", "{{saleId}}", "items", "{{itemId}}", "cancel"]
+        },
+        "description": "Cancela um item específico (zera `totalAmount` do item e recalcula o total da venda).\n\nDispara `ItemCancelledEvent` (logado).\n\nRoda **depois** do `Get Sale by Id` para popular `itemId`."
+      }
+    },
+    {
+      "name": "Cancel Sale",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales/{{saleId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales", "{{saleId}}", "cancel"]
+        },
+        "description": "Cancela a venda inteira (`status = Cancelled`, `totalAmount = 0`).\n\nDispara `SaleCancelledEvent` (logado)."
+      }
+    },
+    {
+      "name": "Delete Sale",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/sales/{{saleId}}", "host": ["{{baseUrl}}"], "path": ["api", "sales", "{{saleId}}"] },
+        "description": "Remove permanentemente a venda."
+      }
+    },
+    {
+      "name": "Error - quantity above 20 (400 ValidationError)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"saleNumber\": \"OVER-{{$timestamp}}\",\n  \"saleDate\": \"2026-04-29T10:00:00Z\",\n  \"customerId\": \"{{customerId}}\",\n  \"customerName\": \"X\",\n  \"branchId\": \"{{branchId}}\",\n  \"branchName\": \"Y\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"productName\": \"Beer\", \"quantity\": 21, \"unitPrice\": 10 }\n  ]\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/sales", "host": ["{{baseUrl}}"], "path": ["api", "sales"] },
+        "description": "Demonstra a regra `qty > 20 = proibido`.\n\nRetorna 400 com envelope `{type: ValidationError, error, detail}`."
+      }
+    },
+    {
+      "name": "Error - sale not found (404 ResourceNotFound)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales/00000000-0000-0000-0000-000000000099",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales", "00000000-0000-0000-0000-000000000099"]
+        },
+        "description": "Retorna 404 com envelope `{type: ResourceNotFound, error, detail}`."
+      }
+    },
+    {
+      "name": "Error - duplicate sale number (409 Conflict)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"saleNumber\": \"DUP-FIXED\",\n  \"saleDate\": \"2026-04-29T10:00:00Z\",\n  \"customerId\": \"{{customerId}}\",\n  \"customerName\": \"X\",\n  \"branchId\": \"{{branchId}}\",\n  \"branchName\": \"Y\",\n  \"items\": [\n    { \"productId\": \"{{productId}}\", \"productName\": \"Beer\", \"quantity\": 1, \"unitPrice\": 10 }\n  ]\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/sales", "host": ["{{baseUrl}}"], "path": ["api", "sales"] },
+        "description": "Rode duas vezes seguidas: a primeira retorna 201, a segunda retorna 409 com envelope `{type: Conflict, error, detail}` por violar `SaleNumber` único."
+      }
+    },
+    {
+      "name": "Error - missing token (401 Unauthorized)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "noauth" },
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/sales", "host": ["{{baseUrl}}"], "path": ["api", "sales"] },
+        "description": "SalesController exige `[Authorize]`. Sem o header `Authorization` a API responde 401."
+      }
+    }
+  ]
+}
