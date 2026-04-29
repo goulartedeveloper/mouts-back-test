@@ -4,7 +4,6 @@ using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using Ambev.DeveloperEvaluation.Unit.Domain;
 using AutoMapper;
-using FluentAssertions;
 using NSubstitute;
 using Xunit;
 
@@ -20,10 +19,6 @@ public class CreateUserHandlerTests
     private readonly IPasswordHasher _passwordHasher;
     private readonly CreateUserHandler _handler;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CreateUserHandlerTests"/> class.
-    /// Sets up the test dependencies and creates fake data generators.
-    /// </summary>
     public CreateUserHandlerTests()
     {
         _userRepository = Substitute.For<IUserRepository>();
@@ -32,9 +27,6 @@ public class CreateUserHandlerTests
         _handler = new CreateUserHandler(_userRepository, _mapper, _passwordHasher);
     }
 
-    /// <summary>
-    /// Tests that a valid user creation request is handled successfully.
-    /// </summary>
     [Fact(DisplayName = "Given valid user data When creating user Then returns success response")]
     public async Task Handle_ValidRequest_ReturnsSuccessResponse()
     {
@@ -51,11 +43,7 @@ public class CreateUserHandlerTests
             Role = command.Role
         };
 
-        var result = new CreateUserResult
-        {
-            Id = user.Id,
-        };
-
+        var result = new CreateUserResult { Id = user.Id };
 
         _mapper.Map<User>(command).Returns(user);
         _mapper.Map<CreateUserResult>(user).Returns(result);
@@ -68,30 +56,20 @@ public class CreateUserHandlerTests
         var createUserResult = await _handler.Handle(command, CancellationToken.None);
 
         // Then
-        createUserResult.Should().NotBeNull();
-        createUserResult.Id.Should().Be(user.Id);
+        Assert.NotNull(createUserResult);
+        Assert.Equal(user.Id, createUserResult.Id);
         await _userRepository.Received(1).CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Tests that an invalid user creation request throws a validation exception.
-    /// </summary>
     [Fact(DisplayName = "Given invalid user data When creating user Then throws validation exception")]
     public async Task Handle_InvalidRequest_ThrowsValidationException()
     {
-        // Given
-        var command = new CreateUserCommand(); // Empty command will fail validation
+        var command = new CreateUserCommand();
 
-        // When
-        var act = () => _handler.Handle(command, CancellationToken.None);
-
-        // Then
-        await act.Should().ThrowAsync<FluentValidation.ValidationException>();
+        await Assert.ThrowsAsync<FluentValidation.ValidationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
     }
 
-    /// <summary>
-    /// Tests that the password is hashed before saving the user.
-    /// </summary>
     [Fact(DisplayName = "Given user creation request When handling Then password is hashed")]
     public async Task Handle_ValidRequest_HashesPassword()
     {
@@ -125,9 +103,6 @@ public class CreateUserHandlerTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Tests that the mapper is called with the correct command.
-    /// </summary>
     [Fact(DisplayName = "Given valid command When handling Then maps command to user entity")]
     public async Task Handle_ValidRequest_MapsCommandToUser()
     {

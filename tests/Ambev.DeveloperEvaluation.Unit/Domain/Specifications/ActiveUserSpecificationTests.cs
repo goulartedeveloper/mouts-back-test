@@ -1,7 +1,6 @@
 using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Domain.Specifications;
 using Ambev.DeveloperEvaluation.Unit.Domain.Specifications.TestData;
-using FluentAssertions;
 using Xunit;
 
 namespace Ambev.DeveloperEvaluation.Unit.Domain.Specifications
@@ -22,7 +21,7 @@ namespace Ambev.DeveloperEvaluation.Unit.Domain.Specifications
             var result = specification.IsSatisfiedBy(user);
 
             // Assert
-            result.Should().Be(expectedResult);
+            Assert.Equal(expectedResult, result);
         }
     }
 }

@@ -28,18 +28,20 @@ public static class LoggingExtension
     /// <summary>
     /// A filter predicate to exclude log events with specific criteria.
     /// </summary>
+    // Filter.ByExcluding(predicate) DROPS the event when the predicate returns true.
+    // We only want to drop "noisy" Information-level pings to /health that returned 200.
+    // Anything Warning/Error/Fatal must always pass through.
     static readonly Func<LogEvent, bool> _filterPredicate = exclusionPredicate =>
     {
-
-        if (exclusionPredicate.Level != LogEventLevel.Information) return true;
+        if (exclusionPredicate.Level != LogEventLevel.Information) return false;
 
         exclusionPredicate.Properties.TryGetValue("StatusCode", out var statusCode);
         exclusionPredicate.Properties.TryGetValue("Path", out var path);
 
-        var excludeByStatusCode = statusCode == null || statusCode.ToString().Equals("200");
-        var excludeByPath = path?.ToString().Contains("/health") ?? false;
+        var isOkStatus = statusCode == null || statusCode.ToString().Equals("200");
+        var isHealthPath = path?.ToString().Contains("/health") ?? false;
 
-        return excludeByStatusCode && excludeByPath;
+        return isOkStatus && isHealthPath;
     };
 
     /// <summary>
